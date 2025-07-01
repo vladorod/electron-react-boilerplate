@@ -9,12 +9,14 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
-import { app, BrowserWindow, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
-import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
 
+// import { resolveHtmlPath } from './util';
+
+let tray: Tray | null;
 class AppUpdater {
   constructor() {
     log.transports.file.level = 'info';
@@ -24,6 +26,15 @@ class AppUpdater {
 }
 
 let mainWindow: BrowserWindow | null = null;
+
+
+const getAssetPath = (...paths: string[]): string => {
+  const RESOURCES_PATH = app.isPackaged
+    ? path.join(process.resourcesPath, 'assets')
+    : path.join(__dirname, '../../assets');
+
+  return path.join(RESOURCES_PATH, ...paths);
+};
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
@@ -61,20 +72,19 @@ const createWindow = async () => {
     await installExtensions();
   }
 
-  const RESOURCES_PATH = app.isPackaged
-    ? path.join(process.resourcesPath, 'assets')
-    : path.join(__dirname, '../../assets');
-
-  const getAssetPath = (...paths: string[]): string => {
-    return path.join(RESOURCES_PATH, ...paths);
-  };
 
   mainWindow = new BrowserWindow({
     show: false,
     width: 1024,
     height: 728,
+    frame: false,
+    autoHideMenuBar: true,
     icon: getAssetPath('icon.png'),
     webPreferences: {
+      webviewTag: true,
+      javascript: true,
+      nodeIntegration: false,
+      contextIsolation: true,
       preload: app.isPackaged
         ? path.join(__dirname, 'preload.js')
         : path.join(__dirname, '../../.erb/dll/preload.js'),
@@ -82,6 +92,8 @@ const createWindow = async () => {
   });
 
   mainWindow.loadURL(resolveHtmlPath('index.html'));
+  // mainWindow.loadURL(resolveHtmlPath('index.html'));
+  // Когда сайт загружен, добавляем HTML
 
   mainWindow.on('ready-to-show', () => {
     if (!mainWindow) {
@@ -94,18 +106,43 @@ const createWindow = async () => {
     }
   });
 
+
+
+
   mainWindow.on('closed', () => {
     mainWindow = null;
+    tray = null;
+
+    app.quit();
   });
 
-  const menuBuilder = new MenuBuilder(mainWindow);
-  menuBuilder.buildMenu();
-
-  // Open urls in the user's browser
-  mainWindow.webContents.setWindowOpenHandler((edata) => {
-    shell.openExternal(edata.url);
-    return { action: 'deny' };
+  ipcMain.on('minimize_window', (event, message) => {
+    if (mainWindow instanceof BrowserWindow) {
+      mainWindow.minimize();
+    }
   });
+
+  ipcMain.on('fullScreen_window', (event, message) => {
+    const isFullScreen = mainWindow.isFullScreen();
+    if (mainWindow instanceof BrowserWindow) {
+      mainWindow.setFullScreen(!isFullScreen);
+    }
+  });
+
+  ipcMain.on('close_window', (event, message) => {
+    if (mainWindow instanceof BrowserWindow) {
+      mainWindow.hide();
+    }
+  });
+
+  // const menuBuilder = new MenuBuilder(mainWindow);
+  // menuBuilder.buildMenu();
+  //
+  // // Open urls in the user's browser
+  // mainWindow.webContents.setWindowOpenHandler((edata) => {
+  //   shell.openExternal(edata.url);
+  //   return { action: 'deny' };
+  // });
 
   // Remove this if your app does not use auto updates
   // eslint-disable-next-line
@@ -119,15 +156,47 @@ const createWindow = async () => {
 app.on('window-all-closed', () => {
   // Respect the OSX convention of having the application in memory even
   // after all windows have been closed
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // if (process.platform !== 'darwin') {
+  //   app.quit();
+  // }
 });
+
+
 
 app
   .whenReady()
   .then(() => {
     createWindow();
+    const iconPath = getAssetPath('icons',  '36x36.png');
+    tray = new Tray(iconPath);
+
+    const contextMenu = Menu.buildFromTemplate([
+      {
+        label: 'Открыть',
+        click: () => {
+          mainWindow.show();  // Показывает окно
+        }
+      },
+      {
+        label: 'Выйти',
+        click: () => {
+          mainWindow.close();  // Закрывает окно
+        }
+      }
+    ]);
+
+    tray.on('click', () => {
+      if (mainWindow.isVisible()) {
+        mainWindow.focus();  // Если окно уже открыто, фокусируем его
+      } else {
+        mainWindow.show();   // Если окно скрыто, показываем его
+      }
+    });
+
+
+    tray.setToolTip('Punch');
+    tray.setContextMenu(contextMenu);
+
     app.on('activate', () => {
       // On macOS it's common to re-create a window in the app when the
       // dock icon is clicked and there are no other windows open.

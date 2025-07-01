@@ -4,59 +4,62 @@
  */
 body {
   position: relative;
-  color: white;
   height: 100vh;
-  background: linear-gradient(
-    200.96deg,
-    #fedc2a -29.09%,
-    #dd5789 51.77%,
-    #7a2c9e 129.35%
-  );
   font-family: sans-serif;
   overflow-y: hidden;
   display: flex;
   justify-content: center;
   align-items: center;
+  user-select: none;
 }
 
-button {
-  background-color: white;
-  padding: 10px 20px;
-  border-radius: 10px;
-  border: none;
-  appearance: none;
-  font-size: 1.3rem;
-  box-shadow: 0px 8px 28px -6px rgba(24, 39, 75, 0.12),
-    0px 18px 88px -4px rgba(24, 39, 75, 0.14);
-  transition: all ease-in 0.1s;
-  cursor: pointer;
-  opacity: 0.9;
+.app{
+  height: 100%;
 }
-
-button:hover {
-  transform: scale(1.05);
-  opacity: 1;
-}
-
-li {
-  list-style: none;
-}
-
-a {
-  text-decoration: none;
-  height: fit-content;
-  width: fit-content;
-  margin: 10px;
-}
-
-a:hover {
-  opacity: 1;
-  text-decoration: none;
-}
-
-.Hello {
+.buttonsContainer {
   display: flex;
-  justify-content: center;
-  align-items: center;
-  margin: 20px 0;
+  -webkit-app-region: no-drag;
+  height: 100%;
 }
+   /* Стили для кастомного заголовка */
+ .custom-titlebar {
+   -webkit-app-region: drag; /* Разрешаем перетаскивание окна */
+   height: 4%;
+   background-color: #313338FF;
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+ }
+
+ .close {
+   width: 40px;
+   justify-content: center;
+   display: flex;
+   align-items: center;
+   cursor: pointer;
+ }
+
+ .logo {
+   font-weight: bold;
+   color: white;
+   margin-left: 10px;
+   opacity: 0.2;
+ }
+
+ .close:hover {
+   background-color: #F03F42FF;
+ }
+
+ .minimize {
+   width: 40px;
+   justify-content: center;
+   display: flex;
+   cursor: pointer;
+   align-items: center;
+ }
+
+ .minimize:hover {
+   background-color: rgba(255, 255, 255, 0.24);
+ }
+
+
