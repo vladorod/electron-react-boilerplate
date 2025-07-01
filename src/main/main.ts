@@ -9,11 +9,13 @@
  * `./src/main.js` using webpack. This gives us some performance wins.
  */
 import path from 'path';
-import { app, BrowserWindow, ipcMain, Menu, Tray } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, Menu, Tray } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
+import fs from 'fs';
+import progress from 'progress-stream';
+import axios from 'axios';
 import { resolveHtmlPath } from './util';
-
 // import { resolveHtmlPath } from './util';
 
 let tray: Tray | null;
@@ -25,8 +27,7 @@ class AppUpdater {
   }
 }
 
-let mainWindow: BrowserWindow | null = null;
-
+let mainWindow: BrowserWindow ;
 
 const getAssetPath = (...paths: string[]): string => {
   const RESOURCES_PATH = app.isPackaged
@@ -72,7 +73,6 @@ const createWindow = async () => {
     await installExtensions();
   }
 
-
   mainWindow = new BrowserWindow({
     show: false,
     width: 1024,
@@ -106,9 +106,6 @@ const createWindow = async () => {
     }
   });
 
-
-
-
   mainWindow.on('closed', () => {
     mainWindow = null;
     tray = null;
@@ -116,22 +113,121 @@ const createWindow = async () => {
     app.quit();
   });
 
-  ipcMain.on('minimize_window', (event, message) => {
+  ipcMain.on('minimize_window', () => {
     if (mainWindow instanceof BrowserWindow) {
       mainWindow.minimize();
     }
   });
 
-  ipcMain.on('fullScreen_window', (event, message) => {
+  ipcMain.on('fullScreen_window', () => {
     const isFullScreen = mainWindow.isFullScreen();
     if (mainWindow instanceof BrowserWindow) {
       mainWindow.setFullScreen(!isFullScreen);
     }
   });
 
-  ipcMain.on('close_window', (event, message) => {
+  ipcMain.on('close_window', () => {
     if (mainWindow instanceof BrowserWindow) {
       mainWindow.hide();
+    }
+  });
+
+  ipcMain.on('get-file-path', (event) => {
+    if (isDebug) {
+      event.returnValue = path.resolve(app.getAppPath(), '..');
+    } else {
+      event.returnValue = process.env.PORTABLE_EXECUTABLE_DIR;
+    }
+  });
+
+  ipcMain.on('show-error', (event, error) => {
+    dialog
+      .showMessageBox({
+        type: 'error',
+        title: 'Application Error',
+        message: error.toString(),
+        buttons: ['OK'],
+      })
+      .then((result) => {
+        if (result.response === 0) {
+          app.quit();
+        }
+      });
+  });
+
+  ipcMain.on('show-warn', (event, error) => {
+    dialog.showMessageBox({
+      type: 'warning',
+      title: 'Application Warning',
+      message: error.toString(),
+      buttons: ['OK'],
+    });
+  });
+
+  ipcMain.on('download', async (event, data) => {
+    const { url, options } = data;
+
+    try {
+      // Ставим заголовок, чтобы сервер вернул Content-Length
+      const response = await axios({
+        method: 'get',
+        url,
+        responseType: 'stream',
+        headers: {
+          'Accept-Encoding': 'identity',
+        },
+      });
+
+      const totalBytes = parseInt(response.headers['content-length'], 10) || 0;
+      console.log('HEADERS:', response.headers);
+
+      const str = progress({
+        length: totalBytes,
+        time: 100,
+      });
+
+      str.on('progress', (progressData) => {
+        const status = {
+          percent: totalBytes ? progressData.percentage / 100 : 0,
+          transferredBytes: progressData.transferred,
+          totalBytes,
+        };
+        mainWindow.send('download progress', status);
+      });
+
+      // Собираем путь к файлу
+      const { directory } = options;
+      const filePath = path.join(directory, options.filename);
+
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
+      const writer = fs.createWriteStream(filePath);
+
+      response.data
+        .pipe(str)
+        .pipe(writer)
+        .on('finish', () => {
+          console.log('Download complete:', filePath);
+          switch (options.step) {
+            case 'launcher':
+              mainWindow.send('download launcher complete');
+              break;
+            case 'client':
+              mainWindow.send('download client complete');
+              break;
+            case 'patch':
+              mainWindow.send('download patch complete');
+              break;
+            default:
+              mainWindow.send('download default complete');
+          }
+        })
+        .on('error', (err) => {
+          console.error('File write failed:', err);
+          mainWindow.send('download error');
+        });
+    } catch (err) {
+      console.error('Axios download failed:', err);
+      mainWindow.send('download error');
     }
   });
 
@@ -161,38 +257,35 @@ app.on('window-all-closed', () => {
   // }
 });
 
-
-
 app
   .whenReady()
   .then(() => {
     createWindow();
-    const iconPath = getAssetPath('icons',  '36x36.png');
+    const iconPath = getAssetPath('icons', '36x36.png');
     tray = new Tray(iconPath);
 
     const contextMenu = Menu.buildFromTemplate([
       {
         label: 'Открыть',
         click: () => {
-          mainWindow.show();  // Показывает окно
-        }
+          mainWindow.show(); // Показывает окно
+        },
       },
       {
         label: 'Выйти',
         click: () => {
-          mainWindow.close();  // Закрывает окно
-        }
-      }
+          mainWindow.close(); // Закрывает окно
+        },
+      },
     ]);
 
     tray.on('click', () => {
       if (mainWindow.isVisible()) {
-        mainWindow.focus();  // Если окно уже открыто, фокусируем его
+        mainWindow.focus(); // Если окно уже открыто, фокусируем его
       } else {
-        mainWindow.show();   // Если окно скрыто, показываем его
+        mainWindow.show(); // Если окно скрыто, показываем его
       }
     });
-
 
     tray.setToolTip('Punch');
     tray.setContextMenu(contextMenu);
